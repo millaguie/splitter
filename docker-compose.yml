@@ -1,0 +1,289 @@
+services:
+  # ===========================================================================
+  # DEFAULT PROFILE: BALANCED
+  # Good balance of security and performance. Recommended for most users.
+  #
+  # Relay mode: exit (entry nodes from any country, exit nodes from selected)
+  # Load balancing: roundrobin
+  # Instances: 2 per country, 6 countries
+  # ====================================================================
+  splitter:
+    image: ghcr.io/millaguie/splitter:v2.0.0-beta
+    ports:
+      - "63536:63536"   # SOCKS5 proxy
+      - "63537:63537"   # HTTP CONNECT proxy
+      - "63539:63539"   # HAProxy stats (password printed at startup)
+      - "63540:63540"   # Status API /healthz /metrics
+    environment:
+      - SPLITTER_INSTANCES=2
+      - SPLITTER_COUNTRIES=6
+      - SPLITTER_RELAY_ENFORCE=exit
+      - SPLITTER_LOG=1
+    volumes:
+      - ./configs:/splitter/configs:ro
+      - splitter-data:/splitter/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:63540/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # ===========================================================================
+  # ALTERNATIVE PROFILES
+  #
+  # To use one of these:
+  #   1. Comment out (or rename) the "splitter" service above
+  #   2. Uncomment the desired profile below
+  #   3. Run: docker compose up -d
+  #
+  # IMPORTANT: Only ONE splitter service can run at a time unless you change
+  # the host port mappings to avoid conflicts.
+  # ===========================================================================
+
+  # --------------------------------------------------------------------------
+  # MAX SPEED — EUROPE
+  #
+  # Purpose: Low-latency Tor for users in or near Europe. Best for
+  #          streaming, web browsing, and general use with fast response.
+  #
+  # How it works:
+  #   - Relay mode: speed (both entry AND exit nodes from selected countries,
+  #     keeping the entire circuit geographically close for minimal latency)
+  #   - Load balancing: leastconn (sends traffic to the least busy instance)
+  #   - Conflux: ON (splits traffic across multiple circuit legs for more
+  #     bandwidth — Tor 0.4.8+)
+  #   - Congestion control: ON (dramatically improves throughput on
+  #     long-distance circuits — Tor 0.4.7+)
+  #   - IPv6: ON (dual-stack for better connectivity where available)
+  #   - Countries: DE, FR, NL, CH, SE (core European Tor hubs with high
+  #     relay density and low mutual latency)
+  #
+  # Trade-offs: Circuits are concentrated in fewer countries, which slightly
+  #             reduces anonymity compared to the balanced profile.
+  #
+  # Usage: docker compose up -d splitter-speed-eu
+  # --------------------------------------------------------------------------
+  # splitter-speed-eu:
+  #   image: ghcr.io/millaguie/splitter:v2.0.0-beta
+  #   ports:
+  #     - "63541:63536"   # SOCKS5 proxy
+  #     - "63542:63537"   # HTTP CONNECT proxy
+  #     - "63543:63539"   # HAProxy stats
+  #     - "63544:63540"   # Status API /healthz /metrics
+  #   environment:
+  #     - SPLITTER_INSTANCES=1
+  #     - SPLITTER_COUNTRIES={DE},{FR},{NL},{CH},{SE}
+  #     - SPLITTER_RELAY_ENFORCE=speed
+  #     - SPLITTER_PROXY_LOAD_BALANCE_ALGORITHM=leastconn
+  #     - SPLITTER_TOR_CONFLUX_ENABLED=true
+  #     - SPLITTER_TOR_CONGESTION_CONTROL_AUTO=true
+  #     - SPLITTER_TOR_IPV6=true
+  #     - SPLITTER_LOG=1
+  #   volumes:
+  #     - ./configs:/splitter/configs:ro
+  #     - splitter-data-speed-eu:/splitter/data
+  #   restart: unless-stopped
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-sf", "http://localhost:63544/status"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+  #     start_period: 60s
+
+  # --------------------------------------------------------------------------
+  # MAX SPEED — LATIN AMERICA
+  #
+  # Purpose: Low-latency Tor for users in Latin America. Routes circuits
+  #          through Americas-based relays for minimal round-trip time.
+  #
+  # How it works:
+  #   - Relay mode: speed (both entry AND exit from selected countries)
+  #   - Load balancing: leastconn
+  #   - Conflux: ON, Congestion control: ON
+  #   - Countries: US, CA, PA, BR, CL
+  #     US/CA: High relay density, fast backbone
+  #     PA:   Panama — good connectivity hub for the region
+  #     BR:   Brazil — largest Tor network in South America
+  #     CL:   Chile — reliable relays, good Pacific connectivity
+  #
+  # Trade-offs: Brazil and Chile have fewer exit relays than Europe, which
+  #             may affect availability. Some exits may be slower.
+  #
+  # Usage: docker compose up -d splitter-speed-latam
+  # --------------------------------------------------------------------------
+  # splitter-speed-latam:
+  #   image: ghcr.io/millaguie/splitter:v2.0.0-beta
+  #   ports:
+  #     - "63545:63536"   # SOCKS5 proxy
+  #     - "63546:63537"   # HTTP CONNECT proxy
+  #     - "63547:63539"   # HAProxy stats
+  #     - "63548:63540"   # Status API /healthz /metrics
+  #   environment:
+  #     - SPLITTER_INSTANCES=1
+  #     - SPLITTER_COUNTRIES={US},{CA},{PA},{BR},{CL}
+  #     - SPLITTER_RELAY_ENFORCE=speed
+  #     - SPLITTER_PROXY_LOAD_BALANCE_ALGORITHM=leastconn
+  #     - SPLITTER_TOR_CONFLUX_ENABLED=true
+  #     - SPLITTER_TOR_CONGESTION_CONTROL_AUTO=true
+  #     - SPLITTER_LOG=1
+  #   volumes:
+  #     - ./configs:/splitter/configs:ro
+  #     - splitter-data-speed-latam:/splitter/data
+  #   restart: unless-stopped
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-sf", "http://localhost:63548/status"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+  #     start_period: 60s
+
+  # --------------------------------------------------------------------------
+  # MAX PRIVACY — STEALTH
+  #
+  # Purpose: Maximum anonymity for journalists, activists, whistleblowers,
+  #          or anyone facing targeted surveillance.
+  #
+  # How it works:
+  #   - Relay mode: entry (entry/guard nodes from selected countries,
+  #     exit nodes from ANY country — makes it harder to correlate
+  #     entry and exit by geography)
+  #   - Connection padding: ON (inserts dummy traffic to defeat
+  #     traffic analysis and packet size correlation attacks)
+  #   - Entry guards: ON (reuses trusted entry nodes to prevent
+  #     introduction of malicious first hops)
+  #   - Sandbox: ON (Tor's built-in seccomp-bpf syscall sandbox —
+  #     limits kernel attack surface on Linux)
+  #   - Circuit fingerprinting resistance: ON (adaptive rotation
+  #     intervals that defeat timing correlation attacks)
+  #   - Country rotation: 60s (frequently rotates countries to prevent
+  #     long-term correlation)
+  #   - Instances: 3 per country, 8 countries (more circuits = more
+  #     noise for any observer)
+  #   - Logging: OFF (no logs, no crime)
+  #
+  # Trade-offs: Higher latency, lower throughput, more CPU/memory usage.
+  #             Connection padding increases bandwidth consumption by ~10-20%.
+  #
+  # Usage: docker compose up -d splitter-stealth
+  # --------------------------------------------------------------------------
+  # splitter-stealth:
+  #   image: ghcr.io/millaguie/splitter:v2.0.0-beta
+  #   ports:
+  #     - "63549:63536"   # SOCKS5 proxy
+  #     - "63550:63537"   # HTTP CONNECT proxy
+  #     - "63551:63539"   # HAProxy stats
+  #     - "63552:63540"   # Status API /healthz /metrics
+  #   environment:
+  #     - SPLITTER_INSTANCES=3
+  #     - SPLITTER_COUNTRIES=8
+  #     - SPLITTER_RELAY_ENFORCE=entry
+  #     - SPLITTER_TOR_CONNECTION_PADDING=1
+  #     - SPLITTER_TOR_USE_ENTRY_GUARDS=1
+  #     - SPLITTER_TOR_SANDBOX=true
+  #     - SPLITTER_TOR_CONFLUX_ENABLED=true
+  #     - SPLITTER_TOR_CIRCUIT_FINGERPRINTING_RESISTANCE=true
+  #     - SPLITTER_COUNTRY_ROTATION_INTERVAL=60
+  #     - SPLITTER_LOG=0
+  #   volumes:
+  #     - ./configs:/splitter/configs:ro
+  #     - splitter-data-stealth:/splitter/data
+  #   restart: unless-stopped
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-sf", "http://localhost:63552/status"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+  #     start_period: 60s
+
+  # --------------------------------------------------------------------------
+  # PENETRATION TESTING — PENTEST
+  #
+  # Purpose: Security research, pentesting, OSINT. Aggressive circuit
+  #          rotation with stream isolation and randomized User-Agents
+  #          to simulate different users from different locations.
+  #
+  # How it works:
+  #   - Relay mode: exit (exit nodes from selected countries for GeoIP
+  #     bypass — test how services behave from different regions)
+  #   - Stream isolation: ON (each destination gets its own circuit via
+  #     SOCKS5 auth isolation — prevents request correlation)
+  #   - Circuit fingerprinting resistance: ON (adaptive rotation defeats
+  #     timing analysis)
+  #   - Exit reputation: ON (checks Onionoo API to filter honeypots
+  #     and newly-appeared suspicious exits)
+  #   - Country rotation: 60s (frequent changes to maximize coverage)
+  #   - Instances: 5 per country, 10 countries (maximum coverage)
+  #   - Logging: ON at DEBUG level (full visibility for analysis)
+  #
+  # Trade-offs: Very resource-intensive (50 Tor instances). High bandwidth
+  #             and memory usage. DEBUG logs may contain sensitive data —
+  #             only use in controlled environments.
+  #
+  # Usage: docker compose up -d splitter-pentest
+  # --------------------------------------------------------------------------
+  # splitter-pentest:
+  #   image: ghcr.io/millaguie/splitter:v2.0.0-beta
+  #   ports:
+  #     - "63553:63536"   # SOCKS5 proxy
+  #     - "63554:63537"   # HTTP CONNECT proxy
+  #     - "63555:63539"   # HAProxy stats
+  #     - "63556:63540"   # Status API /healthz /metrics
+  #   environment:
+  #     - SPLITTER_INSTANCES=5
+  #     - SPLITTER_COUNTRIES=10
+  #     - SPLITTER_RELAY_ENFORCE=exit
+  #     - SPLITTER_TOR_STREAM_ISOLATION=true
+  #     - SPLITTER_TOR_CIRCUIT_FINGERPRINTING_RESISTANCE=true
+  #     - SPLITTER_EXIT_REPUTATION=true
+  #     - SPLITTER_COUNTRY_ROTATION_INTERVAL=60
+  #     - SPLITTER_VERBOSE=true
+  #     - SPLITTER_LOG=1
+  #     - SPLITTER_LOG_LEVEL=DEBUG
+  #   volumes:
+  #     - ./configs:/splitter/configs:ro
+  #     - splitter-data-pentest:/splitter/data
+  #   restart: unless-stopped
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-sf", "http://localhost:63556/status"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+  #     start_period: 120s
+
+  # ===========================================================================
+  # OPTIONAL MONITORING STACK
+  # Uncomment to enable Prometheus + Grafana alongside SPLITTER.
+  # Requires SPLITTER_LOG=1 and the metrics endpoint enabled.
+  # ===========================================================================
+  #
+  # prometheus:
+  #   image: prom/prometheus:latest
+  #   ports:
+  #     - "9090:9090"
+  #   volumes:
+  #     - ./configs/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+  #     - prometheus-data:/prometheus
+  #   restart: unless-stopped
+  #   depends_on:
+  #     - splitter
+  #
+  # grafana:
+  #   image: grafana/grafana:latest
+  #   ports:
+  #     - "3000:3000"
+  #   volumes:
+  #     - grafana-data:/var/lib/grafana
+  #   restart: unless-stopped
+  #   depends_on:
+  #     - prometheus
+
+volumes:
+  splitter-data:
+  # splitter-data-speed-eu:
+  # splitter-data-speed-latam:
+  # splitter-data-stealth:
+  # splitter-data-pentest:
+  # prometheus-data:
+  # grafana-data:

@@ -1,0 +1,83 @@
+stealth:
+  description: "Maximum security - aggressive rotation, many instances"
+  instances:
+    per_country: 3
+    countries: 8
+  relay:
+    enforce: "entry"
+  proxy:
+    load_balance_algorithm: "roundrobin"
+  tor:
+    max_circuit_dirtiness: 10
+    connection_padding: 1
+    use_entry_guards: 1
+    sandbox: true
+    conflux_enabled: true
+    congestion_control_auto: true
+    circuit_fingerprinting_resistance: true
+  logging:
+    enabled: false
+  country:
+    rotation_interval: 60
+    total_to_change: 5
+
+balanced:
+  description: "Good balance of security and performance"
+  instances:
+    per_country: 2
+    countries: 6
+  relay:
+    enforce: "exit"
+  proxy:
+    load_balance_algorithm: "roundrobin"
+  tor:
+    max_circuit_dirtiness: 15
+    conflux_enabled: false
+    congestion_control_auto: true
+    sandbox: false
+  logging:
+    enabled: false
+
+streaming:
+  description: "Optimized for media streaming - higher throughput"
+  instances:
+    per_country: 1
+    countries: 4
+  relay:
+    enforce: "speed"
+  proxy:
+    load_balance_algorithm: "leastconn"
+  tor:
+    max_circuit_dirtiness: 300
+    connection_padding: 0
+    ipv6: true
+    conflux_enabled: true
+    congestion_control_auto: true
+    sandbox: false
+  logging:
+    enabled: false
+
+pentest:
+  description: "Penetration testing - extreme rotation, randomized UA"
+  instances:
+    per_country: 5
+    countries: 10
+  relay:
+    enforce: "exit"
+  proxy:
+    load_balance_algorithm: "roundrobin"
+  tor:
+    max_circuit_dirtiness: 10
+    stream_isolation: true
+    conflux_enabled: false
+    congestion_control_auto: false
+    sandbox: false
+    circuit_fingerprinting_resistance: true
+  logging:
+    enabled: true
+    level: "DEBUG"
+  country:
+    rotation_interval: 60
+    total_to_change: 8
+  health_check:
+    exit_reputation: true

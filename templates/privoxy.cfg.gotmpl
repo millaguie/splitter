@@ -1,0 +1,24 @@
+# SPLITTER Privoxy Config - Instance {{.InstanceID}}
+# Generated automatically - do not edit
+
+listen-address {{.ListenAddr}}:{{.Port}}
+forward-socks5t / 127.0.0.1:{{.SocksPort}} .
+forward         168.192.0.0/16 .
+forward         10.0.0.0/8 .
+forward         172.16.0.0/12 .
+forward         192.168.0.0/16 .
+forward         127.0.0.0/8 .
+forward         0.0.0.0/8 .
+forward         169.254.0.0/16 .
+
+# Security
+toggle  1
+enable-remote-toggle 0
+enable-edit-actions 0
+enforce-blocks 1
+
+# Logging (off by default)
+logfile /dev/null
+
+# Misc
+buffer-limit 4096

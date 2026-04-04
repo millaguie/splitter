@@ -1,0 +1,26 @@
+# Bridge configurations for SPLITTER
+# These are placeholder bridges. Real bridges should be obtained from:
+# https://bridges.torproject.org/bridges?transport=snowflake
+# https://bridges.torproject.org/bridges?transport=obfs4
+# https://bridges.torproject.org/bridges?transport=webtunnel
+# Update periodically.
+
+snowflake:
+  description: "Snowflake WebRTC transport"
+  transport: "snowflake"
+  lines:
+    - "Bridge snowflake 192.0.2.1:80 192.0.2.1:443 fingerprint=fingerprint1"
+    - "Bridge snowflake 192.0.2.2:80 192.0.2.2:443 fingerprint=fingerprint2"
+
+webtunnel:
+  description: "WebTunnel HTTPS transport"
+  transport: "webtunnel"
+  lines:
+    - "Bridge webtunnel 192.0.2.3:443 192.0.2.3:443 fingerprint=fingerprint3 url=https://example.com/tor"
+
+obfs4:
+  description: "obfs4 transport"
+  transport: "obfs4"
+  lines:
+    - "Bridge obfs4 192.0.2.4:443 192.0.2.4:443 fingerprint=fingerprint4 cert=cert1 iat-mode=0"
+    - "Bridge obfs4 192.0.2.5:443 192.0.2.5:443 fingerprint=fingerprint5 cert=cert2 iat-mode=0"
