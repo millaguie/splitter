@@ -1,437 +1,764 @@
-#                                              DcLabs SPLITTER
+# SPLITTER
 
-##				=== INTRODUCTION ===
- 
-  To exploit the common weakness of TOR related de-anonymization techniques, difficulty traffic-analysis,
-correlation and statistically related attacks on the TOR network. [1, 2, 3, 4, 5, 6, 10, 20, 23, 28]
+Go-based tool that creates and manages multiple Tor network instances load-balanced via HAProxy, with geolocation-based anti-correlation rules for relay selection. Each Tor instance is configured to enforce specific countries for entry or exit nodes, making traffic analysis and de-anonymization attacks significantly harder.
 
-  I developed a free open-source TOR network based shell script called SPLITTER. This script configures and applies a
-systematic chain of free open-source solutions, working together to difficult the TOR related de-anonymization
-techniques and ensure a better performance for TOR network. The result is a better TOR user experience and a more
-secure TOR network related connection approach.
-The SPLITTER is licensed under the BSD - License and was created with an initial academic propose.[41]
-The user accepts the total responsibility for his acts while using this tool.
+Licensed under the BSD License. Created by Rener Alberto (aka Gr1nch) -- DcLabs Security Team. The user accepts total responsibility for their actions while using this tool.
 
-For the best effectiveness of the theoretical approach behind the SPLITTER solution, a low-cost private VPS and
-VPN networks chain should be considered. The idea behind this globally distributed network infrastructure is difficult
-more specific traffic-analysis attacks and do not allow a direct association between the TOR network and the user. This
-network approach will be called “SPLITTER NETWORK” and comprehends few VPS machines under the
-control of the user running the SPLITTER script but using a public VPN service to connect in TOR network.
+---
 
-The bundle of linux open-source tools which compose the SPLITTER tool are:
-- **1) HAPROXY Community Edition:** “HAProxy is a free, very fast and reliable solution
-offering high availability, load balancing, and proxying for TCP and HTTP-based applications.
-It is particularly suited for very high traffic web sites and powers quite a number of the world's
-most visited ones. Over the years it has become the de-facto standard opensource load
-balancer, is now shipped with most mainstream Linux distributions, and is often deployed by
-default in cloud platforms. Since it does not advertise itself, we only know it's used when the
-admins report it.” [33]
+## Architecture
 
-- **2) PRIVOXY:** “Privoxy is a non-caching web proxy with advanced filtering capabilities for
-enhancing privacy, modifying web page data and HTTP headers, controlling access, and
-removing ads and other obnoxious Internet junk. Privoxy has a flexible configuration and can
-be customized to suit individual needs and tastes. It has application for both stand-alone
-systems and multi-user networks.”[34]
+The TCP stream path depends on the proxy mode:
 
-- **3) TOR (standalone):** The TOR network client.[35] 
+**Native mode (recommended, Tor 0.4.8+):**
+```
+User -> HAProxy -> Tor (HTTPTunnelPort) -> Tor Network -> Destination
+```
 
+**Legacy mode:**
+```
+User -> HAProxy -> Privoxy -> Tor -> Tor Network -> Destination
+```
 
-###  == DEPENDENCIES:== 
-    - 1. tor          --> version 0.3.3.6 or earlier - https://www.torproject.org/
-    - 2. privoxy      --> version 3.0.26  or earlier - http://www.privoxy.org/
-    - 3. haproxy      --> version 1.7.5-2 or earlier - https://www.haproxy.org/
-    - 4. proxychains  --> version 3.1     or earlier - https://sourceforge.net/projects/proxychains/
-    - 5. expect       --> version 5.45    or earlier - https://sourceforge.net/projects/expect/
-
-
-
-#				=== SPLITTER overview ===
-Each SPLITTER related tool is applied in a systematic sequence, driving the TCP packets from the
-user browser or application, first to HAPROXY, second to PRIVOXY and the last step is the TOR
-standalone which provide the connection with TOR network. After being routed through the current
-active TOR circuit[8], the packet reaches the final destination. The answer for this TCP packet will
-follow the reverse path.
+Native mode eliminates the Privoxy hop entirely, reducing latency and removing a dependency. HAProxy backends point directly at Tor's built-in HTTP CONNECT proxy listeners.
 
 ![SPLITTER - TCP STREAM PATH](Doc/01_TCP_STREAM_PATH.png)
 
+---
 
-The SPLITTER will create and handle with many TOR network connections. 
-A single TOR standalone network connection is also called in this paper as “TOR INSTANCE” and comprehends a single and unique execution of TOR standalone running and administrating it’s own TOR network circuits.[8, 16, 21, 22, 24, 25, 26, 27]
-The SPLITTER gives the user the opportunity to configure every single parameter related to the execution of HAPROXY, PRIVOXY, and TOR standalone. [27, 36, 37]
-However, the most important aspect of this tool is the geolocation approach and how it selects the countries which will be enforced to compose the TOR circuit.[8, 16, 21, 22, 24, 26, 27, 29]
-The user should define how many TOR instances per country and how many countries the SPLITTER can use. It’s possible for example to create a number “X” of instances using the same country, as ENTRY NODE or EXIT NODE.
+## Quick Start
 
+### Build
 
-## TOR instances load balance overview:
+```bash
+go build -o splitter .
+```
 
-![SPLITTER - LOAD BALANCE OVERVIEW](Doc/02_LOADBALANCE_OVERVIEW.png)
+### Run
 
-Considering a single TOR instance, by default the SPLITTER will never use the same country as TOR ENTRY NODE and TOR EXIT NODE. This rule forces the same adversary compromise TOR nodes in different countries to be able to capture and correlate the user data transmitted using the currently active and selected TOR circuit.
+```bash
+# Default: 2 instances/country, 6 countries, entry enforcement
+./splitter run
 
-## Default “Anti-Correlation” rules:
+# Custom settings
+./splitter run -i 3 -c 8 -r exit
 
-1. Always select a random country, from the list of countries that user accepts use as TOR ENTRY node or TOR EXIT node depending on which TOR node the user decide to enforce. It means that all random TOR circuits created by this manipulated TOR instance have a great chance to have a unique geolocation oriented combination of TOR ENTRY NODE and TOR EXIT NODE. This feature can by default difficult the correlation of many de-anonymization techniques based on:
+# With a profile
+./splitter run --profile stealth
 
-	A) The absence of adversary’s compromised TOR nodes or compromised network related
-equipment in both randomly selected countries.[1, 2, 3, 4, 5, 6, 10, 20, 23, 28]
+# With bridges (censored networks)
+./splitter run --bridge-type snowflake
+```
 
- B) The deliberated disturbed created by SPLITTER in the natural global network path for packets in transit between the user machine and the destination server. [1, 2, 3, 4, 5, 6, 10, 20, 23, 28]
+### Docker
 
+There are two compose files included:
 
-2. Considering the natural random country selection of TOR algorithm[8] which inside the SPLITTER manipulated context, will compose the beginning or the end of the TOR circuit, depending on which node/relay the user decide to enforce.[8] 
-The probability exists for future TOR circuits[8] created by this TOR instance, select once again the same previous combination of TOR ENTRY node and TOR EXIT used by this TOR instance in the past.
-Aiming to reduce this risk, the SPLITTER also controls the life circle of the TOR instance, giving the user the control about how long time a TOR INSTANCE can remain alive enforced to use a specific country as ENTRY NODE or EXIT NODE. 
+- docker-compose.yml — pulls the published GHCR image (recommended for users).
+- docker-compose.dev.yml — builds the image locally and mounts configs for development.
 
-As result:
+Run the published image (pulls ghcr.io/millaguie/splitter:v2.0.0-RC1 as configured):
 
-A) This rule affects the random geolocation[29] oriented combination of TOR ENTRY
-NODE and TOR EXIT NODE.
+```bash
+docker compose up -d
+```
 
-B) This rule disturbs the lifetime of TCP streams interrupting the TCP streams associated with this TOR instance when longer than “X” minutes. The premature interruption of an established TCP stream can affect the ability of the adversary to transmitting the pattern depending on the de-anonymization technique. [1, 2, 3, 4, 5, 6, 10, 20, 23, 28]
+Run the development compose (builds from source and mounts configs):
 
+```bash
+docker compose -f docker-compose.dev.yml up --build
+```
 
-### The life circle of a single TOR INSTANCE inside the SPLITTER context comprehends:
+Ports: `63536` (SOCKS), `63537` (HTTP), `63539` (stats), `63540` (status/healthz).
 
-1. After selecting a random new country, the SPLITTER will write the TOR configuration file based on the TOR options[27] defined by the user. By default, the first SPLITTER’s rule will be always respected. However, there are two exceptions to the first default rule:
+---
 
-	A) When the user decides to work with SPLITTER SPEED MODE described later in this paper. In this context, the First SPLITTER rule approach will be modified but still being observed.
+## Using the Proxy
 
-	B) When the TOR option “StrictNodes” is disabled and the TOR algorithm is not able to find a route and generate a TOR circuit using the current random combination of the ENTRY NODE, MIDDLE NODE, and EXIT NODE.[27] Under this circumstance, TOR algorithm can select a TOR node from the TOR “ExcludeNodes”[27] to compose the circuit and provide a valid route to the destination.
+### Ports & Endpoints
 
+| Port | Protocol | Description |
+|------|----------|-------------|
+| **63536** | SOCKS5 | SOCKS5 proxy — point any SOCKS5-capable application here |
+| **63537** | HTTP CONNECT | HTTP proxy — point your browser here |
+| **63539** | HTTP | HAProxy stats dashboard (password shown in startup banner) |
+| **63540** | HTTP | Status API (`/status`) and health check (`/healthz`) |
+| **63541+** | TCP | Per-instance SOCKS ports (4999, 5000, ...) — internal use only |
 
-2. The SPLITTER starts the new TOR INSTANCE. This instance will create the TOR circuits always observing the first SPLITTER rule, according to RELAY ENFORCE MODE selected and others specific TOR options.[27]
+### Browser Configuration (HTTP proxy)
 
-3.The SPLITTER creates a random disturb in the interval of TOR circuit creation, aiming to avoid a natural time pattern in the systematic loop process of creation and utilization of TOR circuits.
+This is the simplest option. All browser traffic goes through SPLITTER.
 
-4.When the instance lifetime, reach the time limit specified by the user, the SPLITTER kills the running process related with this TOR instance, delete the temporary and all configuration files related with it and restart the life circle.
+**Firefox / Chrome / Edge:**
+
+1. Open Settings → Network / Proxy
+2. Select "Manual proxy configuration"
+3. Set:
+   - **HTTP proxy**: `localhost` port `63537`
+   - **SSL proxy**: `localhost` port `63537`
+   - (also check "Use same proxy for all protocols")
+
+**Verify it works:**
+```bash
+# Should show a Tor exit IP, not your real IP
+curl -x http://localhost:63537 https://check.torproject.org/api/ip
+```
+
+**Note:** The HTTP proxy works with HTTPS sites because Tor's HTTPTunnelPort uses the CONNECT method (tunneling, not MITM). Your TLS connection remains end-to-end to the destination server.
+
+### Browser Configuration (SOCKS5 proxy)
+
+More control — applications that support SOCKS5 can use this port directly.
+
+**Firefox:**
+
+1. Open Settings → General → Network Settings
+2. Click "Settings…" next to "Use a proxy"
+3. Select "Manual proxy configuration"
+4. Set:
+   - **SOCKS Host**: `localhost`
+   - **SOCKS Port**: `63536`
+   - **SOCKS v5**: checked
+5. Select "SOCKS v5" for DNS resolution through Tor
+
+**curl:**
+```bash
+curl -x socks5h://localhost:63536 https://check.torproject.org/api/ip
+```
+
+**Python (requests):**
+```python
+import requests
+
+proxies = {
+    "http": "socks5h://localhost:63536",
+    "https": "socks5h://localhost:63536",
+}
+r = requests.get("https://check.torproject.org/api/ip", proxies=proxies)
+print(r.json())
+```
+
+**Docker usage note:** When running in Docker, replace `localhost` with your host's IP or `host.docker.internal` (macOS/Windows).
+
+### Other Tools
+
+**System-wide proxy (Linux):**
+```bash
+export http_proxy=http://localhost:63537
+export https_proxy=http://localhost:63537
+export HTTP_PROXY=http://localhost:63537
+export HTTPS_PROXY=http://localhost:63537
+
+# Test
+curl https://check.torproject.org/api/ip
+```
+
+**wget:**
+```bash
+wget -e use_proxy=yes -e http_proxy=http://localhost:63537 https://example.com
+```
+
+**Git:**
+```bash
+git config --global http.proxy http://localhost:63537
+git config --global https.proxy http://localhost:63537
+```
+
+### HAProxy Stats Dashboard
+
+The stats page shows real-time backend health, request counts, and error rates.
+
+```bash
+# Get password from startup logs
+docker logs splitter-dev 2>&1 | grep "HAProxy stats:"
+# Example output: HAProxy stats: 0.0.0.0:63539/splitter_status (password: xYzAbC123)
+
+# Open in browser
+# http://localhost:63539/splitter_status
+```
+
+### Status & Health Check
+
+```bash
+# JSON status with instance count, Tor version, features
+curl http://localhost:63540/status | python3 -m json.tool
+
+# Health check (returns 200 when all instances are ready)
+curl -sf http://localhost:63540/healthz
+```
+
+### Verifying It Works
+
+```bash
+# 1. Check that traffic goes through Tor
+curl -x http://localhost:63537 https://check.torproject.org/api/ip
+# Expected: {"IsTor":true,"IP":"45.x.x.x"}
+
+# 2. Verify IP rotation (multiple requests should return different IPs)
+for i in $(seq 1 6); do
+  curl -s -x http://localhost:63537 https://check.torproject.org/api/ip
+  sleep 1
+done
+
+# 3. Check your real IP (for comparison — should NOT match Tor exit IPs)
+curl -s https://check.torproject.org/api/ip
+
+# 4. DNS leak test
+./splitter test dns
+
+# 5. Exit node reputation check
+./splitter test exit-reputation
+```
+
+---
+
+## Environment Variables
+
+All configuration values can be overridden via environment variables with the `SPLITTER_` prefix. Variables override YAML config file defaults but are overridden by CLI flags.
+
+### Core
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SPLITTER_INSTANCES` | `2` | Tor instances per country |
+| `SPLITTER_COUNTRIES` | `6` | Number of countries to select |
+| `SPLITTER_RELAY_ENFORCE` | `entry` | Relay mode: `entry`, `exit`, `speed` |
+| `SPLITTER_PROXY_MODE` | `native` | Proxy mode: `native` or `legacy` |
+| `SPLITTER_PROFILE` | `""` | Configuration profile: `stealth`, `balanced`, `streaming`, `pentest` |
+
+### Features
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SPLITTER_LOG` | `0` | Enable logging (1 = on) |
+| `SPLITTER_LOG_LEVEL` | `info` | Log level: `debug`, `info`, `warn`, `error` |
+| `SPLITTER_AUTO_COUNTRIES` | `0` | Auto-fetch country list from Tor Metrics API |
+| `SPLITTER_STREAM_ISOLATION` | `0` | Enable stream isolation via SOCKS5 auth |
+| `SPLITTER_IPV6` | `0` | Enable IPv6 dual-stack relay selection |
+| `SPLITTER_EXIT_REPUTATION` | `0` | Check exit node reputation via Onionoo API |
+| `SPLITTER_METRICS` | `0` | Enable Prometheus metrics endpoint |
+| `SPLITTER_BRIDGE_TYPE` | `none` | Bridge type: `snowflake`, `webtunnel`, `obfs4`, `none` |
+| `SPLITTER_COUNTRY_INTERVAL` | `120` | Country rotation interval in seconds |
+
+### Ports
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SPLITTER_SOCKS_PORT` | `63536` | SOCKS5 proxy listen port |
+| `SPLITTER_HTTP_PORT` | `63537` | HTTP proxy listen port |
+| `SPLITTER_STATS_PORT` | `63539` | HAProxy stats page port |
+| `SPLITTER_STATUS_PORT` | `63540` | Status/healthz HTTP port |
+
+### Docker-Specific
+
+```bash
+docker run -d --name splitter \
+  -p 63536:63536 \
+  -p 63537:63537 \
+  -p 63539:63539 \
+  -p 63540:63540 \
+  -e SPLITTER_INSTANCES=2 \
+  -e SPLITTER_COUNTRIES=6 \
+  -e SPLITTER_RELAY_ENFORCE=exit \
+  -e SPLITTER_LOG=1 \
+  splitter
+```
+
+> **Security note:** Do NOT expose ports 63536-63537 publicly. These are unauthenticated proxies. Use Docker's port mapping to bind to `127.0.0.1` only, or restrict access with a firewall. Exposing them on `0.0.0.0` means anyone who can reach your server can use your Tor exit as an open proxy.
+
+To bind to localhost only:
+
+```bash
+docker run -d --name splitter \
+  -p 127.0.0.1:63536:63536 \
+  -p 127.0.0.1:63537:63537 \
+  -p 127.0.0.1:63539:63539 \
+  -p 127.0.0.1:63540:63540 \
+  -e SPLITTER_INSTANCES=2 \
+  -e SPLITTER_COUNTRIES=6 \
+  -e SPLITTER_RELAY_ENFORCE=exit \
+  splitter
+```
+
+Or with docker-compose.yml:
+
+```yaml
+services:
+  splitter:
+    image: ghcr.io/millaguie/splitter:v2.0.0-beta-02
+    ports:
+      - "127.0.0.1:63536:63536"
+      - "127.0.0.1:63537:63537"
+      - "127.0.0.1:63539:63539"
+      - "127.0.0.1:63540:63540"
+```
+
+### Custom Configuration
+
+Mount your own config file to override defaults:
+
+```bash
+docker run -d --name splitter \
+  -v ./my-config.yaml:/splitter/configs/default.yaml:ro \
+  -p 63536:63536 -p 63537:63537 -p 63539:63539 -p 63540:63540 \
+  splitter
+```
+
+---
+
+## CLI Reference
+
+### Commands
+
+| Command | Description |
+|---------|-------------|
+| `splitter run` | Start SPLITTER with Tor instances and HAProxy |
+| `splitter status` | Show live dashboard of instances, countries, circuits |
+| `splitter test dns` | Run DNS leak test through Tor |
+| `splitter test exit-reputation` | Check exit node reputation |
+| `splitter version` | Show version and detected Tor features |
+
+### Flags
+
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--instances` | `-i` | 2 | Tor instances per country |
+| `--countries` | `-c` | 6 | Number of countries to select |
+| `--relay-enforce` | `-r` | entry | Relay mode: entry, exit, speed |
+| `-re` | -- | -- | Legacy alias for `--relay-enforce` |
+| `--profile` | -- | "" | Configuration profile: stealth, balanced, streaming, pentest |
+| `--proxy-mode` | -- | native | Proxy mode: native (HTTPTunnelPort), legacy (Privoxy) |
+| `--bridge-type` | -- | none | Bridge type: snowflake, webtunnel, obfs4, none |
+| `--verbose` | -- | false | Enable verbose output |
+| `--log` | -- | false | Enable logging (off by default: no logs, no crime) |
+| `--log-level` | -- | info | Log level: debug, info, warn, error |
+| `--auto-countries` | -- | false | Auto-fetch country list from Tor Metrics API |
+| `--stream-isolation` | -- | false | Enable stream isolation via SOCKS5 auth |
+| `--ipv6` | -- | false | Enable IPv6 dual-stack relay selection |
+| `--exit-reputation` | -- | false | Check exit node reputation via Onionoo API |
+
+---
+
+## Configuration Profiles
+
+Predefined profiles for common use cases. Set with `--profile <name>`.
+
+### stealth
+
+Maximum security. Aggressive rotation, many instances, all hardening enabled.
+
+| Parameter | Value |
+|-----------|-------|
+| Instances/country | 3 |
+| Countries | 8 |
+| Relay enforce | entry |
+| Circuit rotation | 10s |
+| Load balance | roundrobin |
+| Conflux | enabled |
+| Congestion control | enabled |
+| Connection padding | enabled |
+| Sandbox | enabled |
+| Circuit fingerprinting resistance | enabled |
+| Logging | off |
+
+### balanced
+
+Good tradeoff between security and performance. Default-like behavior.
+
+| Parameter | Value |
+|-----------|-------|
+| Instances/country | 2 |
+| Countries | 6 |
+| Relay enforce | exit |
+| Circuit rotation | 15s |
+| Load balance | roundrobin |
+| Congestion control | enabled |
+| Logging | off |
+
+### streaming
+
+Optimized for throughput and media consumption.
+
+| Parameter | Value |
+|-----------|-------|
+| Instances/country | 1 |
+| Countries | 4 |
+| Relay enforce | speed |
+| Circuit rotation | 300s |
+| Load balance | leastconn |
+| Conflux | enabled |
+| Congestion control | enabled |
+| IPv6 | enabled |
+| Logging | off |
+
+### pentest
+
+Extreme rotation and randomization for penetration testing scenarios.
+
+| Parameter | Value |
+|-----------|-------|
+| Instances/country | 5 |
+| Countries | 10 |
+| Relay enforce | exit |
+| Circuit rotation | 10s |
+| Load balance | roundrobin |
+| Stream isolation | enabled |
+| Circuit fingerprinting resistance | enabled |
+| Exit reputation | enabled |
+| Logging | DEBUG |
+
+---
+
+## Docker Usage
+
+### docker-compose.yml
+
+```yaml
+version: "3.8"
+
+services:
+  splitter:
+    image: ghcr.io/millaguie/splitter:v2.0.0-beta-02
+    ports:
+      - "63536:63536"   # SOCKS5 proxy
+      - "63537:63537"   # HTTP proxy
+      - "63539:63539"   # HAProxy stats
+      - "63540:63540"   # Status / healthz
+    environment:
+      - SPLITTER_INSTANCES=2
+      - SPLITTER_COUNTRIES=6
+      - SPLITTER_RELAY_ENFORCE=exit
+      - SPLITTER_LOG=1
+    volumes:
+      - ./configs:/splitter/configs:ro
+      - splitter-data:/splitter/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:63540/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  splitter-data:
+```
+
+The Docker image uses a multi-stage build: Go compilation in `golang:1.23-alpine`, runtime in `alpine:3.21` with Tor, HAProxy, and Privoxy installed. Runs as a non-root user.
+
+---
+
+## Modern Tor Features
+
+SPLITTER auto-detects Tor version at startup and enables features conditionally:
+
+- **Conflux** (Tor 0.4.8+) -- Multi-leg circuits that split traffic across multiple paths simultaneously, multiplying throughput and resilience
+- **HTTPTunnelPort** (Tor 0.4.8+) -- Native HTTP CONNECT proxy, eliminating the need for Privoxy
+- **Congestion Control** (Tor 0.4.7+) -- Dramatically improves throughput on long-distance circuits
+- **Post-Quantum Key Exchange** (Tor 0.4.8.17+ with OpenSSL 3.5.0+) -- ML-KEM768 protection against harvest-now-decrypt-later attacks
+- **CGO Encryption** (Tor 0.4.9+) -- Counter Galois Onion relay cryptography with improved resistance to tagging attacks
+- **Bridge Support** -- Snowflake, WebTunnel, and obfs4 pluggable transports for censored networks (`--bridge-type`)
+- **Sandboxing** -- seccomp-bpf sandbox via `Sandbox 1` in generated torrc
+- **Circuit Fingerprinting Resistance** -- Adaptive circuit rotation based on traffic patterns, defeating timing correlation attacks
+- **Exit Node Reputation** -- Checks exit relay flags, uptime, and bandwidth via Onionoo API before use
+- **DNS Leak Testing** -- Verifies all DNS queries go exclusively through Tor (`splitter test dns`)
+- **Prometheus Metrics** -- `/metrics` and `/healthz` HTTP endpoints for monitoring and alerting
+- **Stream Isolation** -- Per-destination circuit separation via SOCKS5 auth (`IsolateSOCKSAuth`)
+- **IPv6 Dual-Stack** -- `ClientUseIPv6 1` for broader relay selection
+
+---
+
+## Building from Source
+
+```bash
+# Standard build
+go build -o splitter .
+
+# Optimized binary (smaller, no debug info)
+go build -ldflags="-s -w" -o splitter .
+
+# Cross-compile
+GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o splitter .
+```
+
+### Dependencies
+
+Runtime dependencies must be in `$PATH`:
+- `tor` -- Tor standalone client
+- `haproxy` -- HAProxy load balancer
+- `privoxy` -- Only required in legacy proxy mode
+
+Notes about GHCR image and authentication:
+
+- The default docker-compose.yml references the published GHCR image ghcr.io/millaguie/splitter:v2.0.0-RC1. If that package is public you can pull it without authentication. If GHCR authentication is required for this repository, login with a Personal Access Token (PAT) that has `read:packages`:
+
+```bash
+echo "${GHCR_PAT}" | docker login ghcr.io -u <your-username> --password-stdin
+```
+
+The release workflow sets the binary version at build-time via ldflags (cmd.Version). The Release workflow is triggered by pushing tags like `v2.0.0-RC1` and will build binaries and push container images to GHCR.
+
+SPLITTER detects available binaries and Tor version at startup, failing fast with a clear message if anything is missing.
+
+---
+
+## Migration from Bash Version
+
+The original Bash version is preserved in `legacy/` for reference.
+
+| Aspect | Bash | Go |
+|--------|------|----|
+| Configuration | `settings.cfg` | `configs/default.yaml` |
+| CLI flags | `-i`, `-c`, `-re` | Same short flags + long flags (`--instances`, `--countries`, `--relay-enforce`) |
+| Circuit renewal | `expect` scripts | Native Go Tor control protocol (cookie auth) |
+| Port allocation | `netstat` parsing | `net.Listen` test |
+| Process management | Shell background jobs | Go process groups with graceful shutdown |
+| Logging | Always on | Off by default (`--log` to enable) |
+| Profiles | Manual config editing | `--profile stealth\|balanced\|streaming\|pentest` |
+| Proxy mode | Privoxy always | Native HTTPTunnelPort or legacy Privoxy |
+
+Key changes:
+- No more `expect` dependency -- circuit renewal connects to the Tor control port directly in Go
+- No more `netstat` / `ss` -- port allocation uses the Go standard library
+- No more `proxychains` dependency
+- The `-re` flag is preserved as a legacy alias for `--relay-enforce`
+
+---
+
+## Anti-Correlation Theory
+
+### The Problem
+
+Tor-related de-anonymization techniques rely on traffic analysis, correlation, and statistical attacks [1, 2, 3, 4, 5, 6, 10, 20, 23, 28]. These techniques exploit the ability to observe traffic patterns at both ends of a Tor circuit -- the user's entry point and the exit point -- and correlate them.
+
+### SPLITTER's Approach
+
+SPLITTER defeats these attacks through three mechanisms:
+
+**1. Geolocation-based relay enforcement.** Each Tor instance is configured to use a specific country for either the entry node or exit node (never the same country for both). This forces an adversary to compromise nodes in multiple jurisdictions simultaneously to capture both ends of a circuit [8, 16, 21, 22, 24, 26, 27, 29].
+
+**2. Instance lifecycle management.** Tor instances are periodically killed and restarted with fresh configurations pointing to different countries. This interrupts long-lived TCP streams and prevents an adversary from accumulating enough traffic data over time to perform meaningful correlation [1, 2, 3, 4, 5, 6, 10, 20, 23, 28].
+
+**3. Randomized circuit rotation.** SPLITTER introduces random intervals in circuit creation to avoid predictable timing patterns that could be exploited by timing correlation attacks.
+
+### Relay Enforcement Modes
+
+| Mode | Behavior | Use Case |
+|------|----------|----------|
+| **entry** | Enforces a specific country as entry node; exit is random from a different country | Maximum security (default) |
+| **exit** | Enforces a specific country as exit node; entry is random from a different country | GeoIP bypass, geographic control of exit |
+| **speed** | Enforces the same country for entry, middle, and exit nodes | Maximum throughput, restricted circuit geography |
+
+#### Entry Mode
+
+The load balancing algorithm is round-robin. For a given country enforced as the entry node, SPLITTER selects a different random country for the exit node, ensuring the two never overlap. This controls Tor's normally free random selection of relay countries [8, 27].
+
+#### Exit Mode
+
+Gives the user control over which country the destination server sees as the traffic origin. Suitable for bypassing GeoIP restrictions [29]. Specific use cases:
+
+- **Fixed country**: Set countries to 1 and include only the desired country. Adjust instances per country for stability.
+- **Random countries**: Set the desired number of countries. Each instance rotates through a random selection.
+
+#### Speed Mode
+
+All three relays (entry, middle, exit) are constrained to the same country. This minimizes the geographic distance packets must traverse, maximizing throughput. The first anti-correlation rule is relaxed but still observed [8].
+
+### Instance Lifecycle
+
+The total number of simultaneous active Tor instances is:
+
+**(_X_ instances per country) x (_Y_ countries) = _total instances_**
+
+Each instance follows this lifecycle:
+
+1. SPLITTER selects a random country and writes a torrc configuration file enforcing the selected relay mode
+2. The Tor process starts and creates circuits following SPLITTER's rules
+3. Random jitter is applied to circuit creation intervals to avoid timing patterns
+4. When the instance lifetime expires, SPLITTER kills the process, deletes temporary files, and restarts with a new country
 
 ![SPLITTER - TOR INSTANCE LIFE CIRCLE](Doc/03_INSTANCE_LIFECIRCLE.png)
 
+### HAProxy Health Checking
 
-The total amount of simultaneous active TOR instances is calculated using:
+SPLITTER uses HAProxy to perform health checks on each Tor instance before routing traffic through it. A specific website is checked at configurable intervals. If a circuit fails to respond or the exit node cannot resolve the requested address, the instance is marked down and traffic is routed to another instance.
 
-**(_X_ * _Y_) = _Total amount of simultaneous active TOR instances_.**
-
-Where **“_X_”** is the number of countries and **“_Y_”** the number of desired instances inside the same country.
- 
- 
- 
-## How the SPLITTER "*control*" the TOR NODE/RELAY:
-
-The options for the **TOR NODE/RELAY enforcing** are:
-
-- **ENTRY**: Sets a specific country as ENTRY NODE and will use a different country as EXIT relay. This mode provides the best security for the user and it’s considered the default enforcing mode inside the context of SPLITTER solution.[27]
-
-The load balancing algorithm for HAPROXY in this mode is Round Robin.[36]
-Considering a specific country is enforced for TOR ENTRY node, the SPLITTER will select another random country from the list of countries defined by the user as TOR
-EXIT node, but never the same country already defined to be used as TOR ENTRY node.
-
-By enforcing this rule, the SPLITTER is _controlling_ the TOR algorithm and its free random selection of countries which will compose the TOR circuit. [8, 27]
-
-
-
-- **EXIT**: Sets a specific country as EXIT NODE and will use a different country as ENTRY relay. This option gives the user the control of the EXIT relays and could be used to bypass GeoIP protections.[29] 
-For example, this option is very suitable when you need to make sure that each request will hit the destination through a different country or the same country, depending on the number of countries each TOR instance can use.
-The load balancing algorithm for HAPROXY in this mode is Round Robin.[36]
-
-**A more specific SPLITTER EXIT mode user case:**
-
-A) To always hit the target with the same country: The user needs to include only the desired country in the list of countries available and set the number of simultaneous countries as 1 (one). The number of instances “_Y_” inside this same country should be adjusted according to the user’s stability and speed needs.
-
-B) To hit the target using random countries: After defining the list of countries SPLITTER can use, the user should define the number of simultaneous countries as “_X_” and the number of instances inside each country as “_Y_” according to his stability and speed needs.
-
-
-
-- **SPEED**: This option will enforce the TOR INSTANCE use the same country as ENTRY NODE, MIDDLE NODE, and EXIT NODE. The idea is to ensure the best transmission performance of a TOR circuit, considering the restricted geolocation area that packets should travel to cross the entire TOR circuit.[8]
-
-
-
-# TOR Load balance with HAPROXY
-
-In general, the stability and performance of many circuits from TOR network are not enough for High Definition media consuming like videos in 720p~1080p for example.
-
-The TOR performance and stability related issues can compromise the user experience when trying to consume High Definition media over TOR.
-
-The paper "Improving Tor using a TCP-over-DTLS Tunnel" from Joel Reardon and Ian Goldberg, provide a deep analysis of the TOR network performance and stability related issues. [42]
-
-The SPLITTER is using HAPROXY to perform a health-check of the established TOR circuit before sending the user data. The user can specify a specific website and the interval of analyses. The HAPROXY will monitor the availability of the TOR circuit based on the HTTP answer. If the circuit does not answer or if the TOR EXIT node from the current circuit is not able to resolve the requested address the TOR instance is considered down.
-
-The requests are forwarded to another TOR instance until a fast, stable and reliable circuit be created in the previous instance considered down. The user can specify how many errors are necessary to consider one TOR instance as down and how many successful requests are necessary to consider it up again.
-
-To difficult the correlation, the SPLITTER is using a random order of TOR instances inside HAPROXY configuration file. The idea is to avoid that consecutive requests being sent through the same country when the users decide to use more than one tor instance per country. The interval between the checks can be random or fixed, the user will adjust it according to the speed which new TOR circuits are being and destroyed. By default, 12s is used as the fixed interval between the health-checks. However, we should consider that the health-check by its self can generate a pattern and the adversary can use this sequence of checks to track the user. In another hand, the health-check provide a better speed and stability allowing the user consume High Definition movies even using the TOR network.
+The order of instances in the HAProxy configuration is randomized to prevent consecutive requests from going through the same country when multiple instances share a country.
 
 ![SPLITTER - HAPROXY HEALTH CHECK](Doc/04_HAPROXY_HEALTH_CHECK.png)
 
+![SPLITTER - LOAD BALANCE OVERVIEW](Doc/02_LOADBALANCE_OVERVIEW.png)
 
+---
 
-# SPLITTER NETWORK
+## SPLITTER NETWORK
 
-To difficult the natural correlation between the TOR network and the user, we mentioned the need to connect in a public VPN service before connecting in TOR network. This simple approach prevents that the internet provider is able to see that user is connected on TOR network.
+For maximum effectiveness of the anti-correlation approach, a low-cost private VPS and VPN chain should be considered. This globally distributed network infrastructure makes traffic analysis harder and prevents direct association between the Tor network and the user.
 
-This is considered the best approach for privacy because the natural correlation between the TOR network and the user has been broke.[38, 39, 40]
+### Architecture
 
-However, more sophisticated traffic analyses techniques can observe the natural traffic patterns and follow the path from the VPN provider until the user.[1]
-
-To difficult even more this possibility of correlation, a low-cost VPS and VPN network should be considered.[38, 39, 40]
+The user connects to a VPS via VPN. The VPS runs SPLITTER inside a Docker container and routes all outbound traffic through a public VPN service before entering the Tor network.
 
 ![SPLITTER NETWORK - TCP STREAM PATH](Doc/05_SPLITTER_NETWORK_TCP_STREAM_PATH.png)
 
+### Components
 
-**1) The VPS will act as VPN SERVER and VPN CLIENT at the same time:**
+**1. The VPS acts as both VPN server and VPN client:**
 
-- The user will connect to the VPS using a VPN service running in the VPS. This VPN assume the default gateway for the user machine and all data from the user machine will be forwarded to VPS. The user should point his browser to the exposed HAPROXY port. More details in following number 3.
+- The user connects to the VPS through a VPN service. All user traffic is forwarded to the VPS. The user points their browser to the HAProxy port exposed by the Docker container.
+- The VPS is also connected to a public VPN service. All outbound traffic from the VPS uses this connection, so Tor connections originate from the public VPN's IP address [38, 39, 40].
 
-- The VPS is also connected in a PUBLIC VPN service and all output traffic from the VPS is send using the public VPN connection. This way, when the VPS execute the SPLITTER script the TOR network connection will be established using the public VPN. [38, 39, 40]
+**2. VPS firewall prevents leaks:**
 
+- Inbound: Only VPN server traffic is allowed. All other inbound traffic is blocked.
+- Outbound: Only DNS resolution for the public VPN, connections to the public VPN service, and HAProxy port traffic are allowed. The user's only outbound route is through Tor inside the Docker container.
 
+**3. Docker container isolation:**
 
-**2) The VPS have a firewall to avoid leaks:**
-The inbound traffic and the outbound traffic is controlled to avoid leaks and enforce the following:
-- The only inbound traffic allowed is to VPN SERVER service running in the VPS. All others input traffic are blocked including inputs from docker network.
+SPLITTER runs inside a Docker container. The public VPN connection is established at the VPS level and transferred to the container so it becomes the default gateway. The container exposes only the HAProxy port.
 
-- The outbound traffic allowed is to resolve the DNS address from the PUBLIC VPN server, to connect to this public VPN service and to allow the VPS to connect into HAPROXY port exposed by the docker container. All others output traffic is blocked including traffic from the user connected in the VPN SERVER to the internet. The unique output route for the user connected to the VPN SERVER is using the TOR connection running inside the docker container.
- 
- 
-**3) The VPS will execute a docker container with the SPLITTER solution:**
+If an adversary compromises the container, they are trapped inside it with no route to the VPS operating system or the connected user [44, 45].
 
-The SPLITTER solution will be executed inside a Docker container, and the connection with the public VPN service will be created in the VPS operating system and transferred to the docker container. It is necessary because the public VPN connection should assume the default gateway of the Docker container, but can not assume the default gateway from the VPS operating system.
+### Global Scale
 
-With this docker container approach, we will ensure that the TOR network connection will be executed inside the container and use the public VPN service. The Docker container will expose only the HAPROXY port to the VPS and the user should connect on the VPS VPN SERVICE and point his browser to the HAPROXY port exposed to the VPS.[44, 45]
-
-The container will provide an extra security layer. If the adversary is able to exploit any vulnerability and assume the control of the container, he is trapped inside the container context and the only output available is using the public VPN service. Following this scenario, the attacker will face more difficult to interact with the operating system of the VPS and interact with the user connected in the VPS due to the segregation of environments provided by Docker.[44, 45]
-
-
-##The SPLITTER network in a global scale:
-
-This low-cost network can be distributed around the globe using different VPS providers and different VPN providers. Each VPS will execute a docker container with the SPLITTER SOLUTION running inside, connected to a different VPN provider before connect to the TOR network, according demonstrated in the images 9, 10, 11 and 15.
-
-Each VPS should have at least 1GB of memory RAM and will cost the average of $200,00 (two hundred dollars) per year to remain online. Usually, the public VPN plans will allow the client to have at least 3 simultaneous connections and the price for 1 year is $100,00 (one hundred dollars).
-
-This scenario allows the user to create his own private combination of VPS, VPN, and TOR. The user can use the HAPROXY once again to perform the load balancing between all VPS running the SPLITTER solution. The result will be an even better global spread of the traffic, hopefully difficulting the correlation between the TOR network and the final user.
+Multiple VPS instances can be distributed globally using different providers and VPN services. Each runs SPLITTER in a container connected to a different VPN provider. An additional HAProxy layer can load-balance across all VPS nodes, further distributing traffic and increasing correlation difficulty.
 
 ![SPLITTER NETWORK - OVERVIEW](Doc/06_SPLITTER_NETWORK_OVERVIEW.png)
 
+---
 
-# REFERENCES
+## References
 
-- [1] Sambuddho Chakravarty, Marco V. Barbera, Georgios Portokalidis, Michalis Polychronakis and Angelos D.
-Keromytis - “**On the Effectiveness of Traffic Analysis Against Anonymity Networks Using Flow Records**”.
+- [1] Sambuddho Chakravarty, Marco V. Barbera, Georgios Portokalidis, Michalis Polychronakis and Angelos D. Keromytis -- "On the Effectiveness of Traffic Analysis Against Anonymity Networks Using Flow Records".
+  https://mice.cs.columbia.edu/getTechreport.php?techreportID=1545&format=pdf
 
-[Online] Available: https://mice.cs.columbia.edu/getTechreport.php?techreportID=1545&format=pdf
+- [2] Nathan S. Evans, Roger Dingledine and Christian Grothoff -- "A Practical Congestion Attack on Tor Using Long Paths".
+  https://www.usenix.org/legacy/event/sec09/tech/full_papers/evans.pdf
 
+- [3] Matthew Wright, Micah Adler, Brian N. Levine and Clay Shields -- "An analysis of the degradation of anonymous protocols".
+  http://people.cs.georgetown.edu/~clay/research/pubs/wright.ndss01.pdf
 
-- [2] Nathan S. Evans, Roger Dingledine and Christian Grothoff - “**A Practical Congestion Attack on Tor Using Long Paths**”.
+- [4] Nicholas Hopper, Eeugene Y. Vasserman, and Eric Chan-Tin -- "How Much Anonymity does Network Latency Leak?".
+  https://www-users.cs.umn.edu/~hoppernj/tissec-latency-leak.pdf
 
-[Online] Available: https://www.usenix.org/legacy/event/sec09/tech/full_papers/evans.pdf
+- [5] Sebastian Zander and Steven J. Murdoch -- "An Improved Clock-skew Measurement Technique for Revealing Hidden Services".
+  https://www.usenix.org/legacy/event/sec08/tech/full_papers/zander/zander.pdf
 
+- [6] Kevin Bauer, Damon McCoy, Dirk Grunwald, Tadayoshi Kohno and Douglas Sicker -- "Low-Resource Routing Attacks Against Anonymous Systems".
+  http://www.cs.colorado.edu/department/publications/reports/docs/CU-CS-1025-07.pdf
 
-- [3] Matthew Wright, Micah Adler, Brian N. Levine and Clay Shields - “**An analysis of the degradation of anonymous protocols**”
+- [7] TOR project official web site. https://www.torproject.org/
 
-[Online]. Available: http://people.cs.georgetown.edu/~clay/research/pubs/wright.ndss01.pdf
+- [8] TOR project overview. https://www.torproject.org/about/overview.html.en
 
+- [9] "Statistical Analysis Handbook". http://www.statsref.com/StatsRefSample.pdf
 
-- [4] Nicholas Hopper, Eeugene Y. Vasserman, and Eric Chan-Tin - “**How Much Anonymity does Network Latency Leak?**”.
+- [10] Steven J. Murdoch and George Danezis -- "Low-Cost Traffic Analysis of Tor".
+  https://murdoch.is/papers/oakland05torta.pdf
 
-[Online] Available: https://www-users.cs.umn.edu/~hoppernj/tissec-latency-leak.pdf
+- [11] FBI Official web site -- "Dozens of Online 'Dark Markets' Seized Pursuant to Forfeiture Complaint Filed in Manhattan Federal Court in Conjunction with the Arrest of the Operator of Silk Road 2.0".
+  https://www.fbi.gov/contact-us/field-offices/newyork/news/press-releases/dozens-of-online-dark-markets-seized-pursuant-to-forfeiture-complaint-filed-in-manhattan-federal-court-in-conjunction-with-the-arrest-of-the-operator-of-silk-road-2.0
 
-
-- [5] Sebastian Zander and Steven J. Murdoch - “**An Improved Clock-skew Measurement Technique for Revealing Hidden Services**”.
-
-[Online] Available: https://www.usenix.org/legacy/event/sec08/tech/full_papers/zander/zander.pdf
-
-
-- [6] Kevin Bauer, Damon McCoy, Dirk Grunwald, Tadayoshi Kohno and Douglas Sicker - “**Low-Resource Routing Attacks Against Anonymous Systems**“
-
-[Online] Available: http://www.cs.colorado.edu/department/publications/reports/docs/CU-CS-1025-07.pdf
-
-
-- [7] TOR project official web site. [Online] Available: https://www.torproject.org/
-
-
-- [8] TOR project overview. [Online] Available: https://www.torproject.org/about/overview.html.en
-
-
-- [9] “Statistical Analysis Handbook”. [Online] Available: http://www.statsref.com/StatsRefSample.pdf
-
-
-- [10] Steven J. Murdoch and George Danezis - "**Low-Cost Traffic Analysis of Tor**".
-
-[Online] Available: https://murdoch.is/papers/oakland05torta.pdf
-
-
-- [11] FBI Official web site - “Dozens of Online ‘Dark Markets’ Seized Pursuant to Forfeiture Complaint Filed in
-Manhattan Federal Court in Conjunction with the Arrest of the Operator of Silk Road 2.0”.
-
-[Online] Available: https://www.fbi.gov/contact-us/field-offices/newyork/news/press-releases/dozens-of-online-dark-markets-seized-pursuant-to-forfeiture-complaint-filed-in-manhattan-federal-court-in-conjunction-with-the-arrest-of-the-operator-of-silk-road-2.0
-
-
-- [12] FBI Official web site - “Operator of Silk Road 2.0 Website Charged in Manhattan Federal Court” 
-
-[Online]. Available: https://www.fbi.gov/contact-us/field-offices/newyork/news/press-releases/operator-of-silk-road-2.0-website-charged-in-manhattan-federal-court
-
+- [12] FBI Official web site -- "Operator of Silk Road 2.0 Website Charged in Manhattan Federal Court".
+  https://www.fbi.gov/contact-us/field-offices/newyork/news/press-releases/operator-of-silk-road-2.0-website-charged-in-manhattan-federal-court
 
 - [13] FBI Special Agent: Thomas M. Dalton report about the hoax bomb in Harvard University resulting in the prison of Eldo Kim.
+  https://cbsboston.files.wordpress.com/2013/12/kimeldoharvard.pdf
 
-[Online] Available: https://cbsboston.files.wordpress.com/2013/12/kimeldoharvard.pdf
+- [13.1] FBI Official web site -- "Harvard Student Charged with Bomb Hoax".
+  https://archives.fbi.gov/archives/boston/press-releases/2013/harvard-student-charged-with-bomb-hoax
 
+- [14] FBI Official web site -- "Six Hackers in the United States and Abroad Charged for Crimes Affecting Over One Million Victims".
+  https://archives.fbi.gov/archives/newyork/press-releases/2012/six-hackers-in-the-united-states-and-abroad-charged-for-crimes-affecting-over-one-million-victims
 
-- [13.1] FBI Official web site - “Harvard Student Charged with Bomb Hoax”. 
+- [15] Adrian Crenshaw -- "Dropping Docs on Darknets: How People Got Caught - Defcon 22".
+  https://www.youtube.com/watch?v=7G1LjQSYM5Q
 
-[Online] Available: https://archives.fbi.gov/archives/boston/press-releases/2013/harvard-student-charged-with-bomb-
-hoax
+- [16] TOR Official Project web site -- Metrics about TOR network.
+  https://metrics.torproject.org/networksize.html
 
+- [17] TOR Official Project web site -- "Tor: Onion Service Protocol".
+  https://www.torproject.org/docs/onion-services.html.en
 
-- [14] FBI Official web site - “Six Hackers in the United States and Abroad Charged for Crimes Affecting Over One Million Victims”. 
+- [18] Steven J. Murdoch -- "Hot or Not: Revealing Hidden Services by their Clock Skew".
+  https://murdoch.is/papers/ccs06hotornot.pdf
 
-[Online] Available: https://archives.fbi.gov/archives/newyork/press-releases/2012/six-hackers-in-the-united-states-and-abroad-charged-for-crimes-affecting-over-one-million-victims
+- [19] TOR Official Project web site -- "Who Uses Tor?".
+  https://www.torproject.org/about/torusers.html.en
 
+- [20] Rob Jansen, Marc Juarez, Rafa Galvez, Tariq Elahi and Claudia Diaz -- "Inside Job: Applying Traffic Analysis to Measure Tor from Within".
+  https://www.robgjansen.com/publications/insidejob-ndss2018.pdf
 
-- [15] Adrian Crenshaw - “**Dropping Docs on Darknets: How People Got Caught - Defcon 22**”
+- [21] TOR project official web site -- FAQ: "What are Entry Guards?".
+  https://www.torproject.org/docs/faq#EntryGuards
 
-[Online] Available: https://www.youtube.com/watch?v=7G1LjQSYM5Q
+- [22] TOR project official blog -- "Improving Tor's anonymity by changing guard parameters".
+  https://blog.torproject.org/improving-tors-anonymity-changing-guard-parameters
 
+- [23] Free Haven -- Online Anonymity Papers Library.
+  https://www.freehaven.net/anonbib/
 
-- [16] TOR Official Project web site - Metrics about TOR network.
+- [24] TOR project official blog -- "Research problem: better guard rotation parameters".
+  https://blog.torproject.org/research-problem-better-guard-rotation-parameters
 
-[Online] Available: https://metrics.torproject.org/networksize.html
+- [25] Nick Mathewson -- "Cryptographic Challenges in and around Tor".
+  https://crypto.stanford.edu/RealWorldCrypto/slides/tor.pdf
 
+- [26] TOR project official web site -- FAQ: "How often does Tor change its paths?".
+  https://www.torproject.org/docs/faq#ChangePaths
 
-- [17] TOR Official Project web site - “Tor: Onion Service Protocol”.
+- [27] TOR project official web site -- TOR MANUAL.
+  https://www.torproject.org/docs/tor-manual.html.en
 
-[Online] Available: https://www.torproject.org/docs/onion-services.html.en
+- [28] Milad Nasr, Amir Houmansadr and Arya Mazumdar -- "Compressive Traffic Analysis: A New Paradigm for Scalable Traffic Analysis".
+  https://people.cs.umass.edu/~milad/papers/compress_CCS.pdf
 
+- [29] ISACA -- "Geolocation: Risk, Issues and Strategies".
+  https://www.isaca.org/Groups/Professional-English/wireless/GroupDocuments/Geolocation_WP.pdf
 
-- [18] Steven J. Murdoch - “**Hot or Not: Revealing Hidden Services by their Clock Skew**”.
+- [30] Eugene Gorelik -- "Cloud Computing Models".
+  https://web.mit.edu/smadnick/www/wp/2013-01.pdf
 
-[Online] Available: https://murdoch.is/papers/ccs06hotornot.pdf
+- [31] Alexa Huth and James Cebula -- "The Basics of Cloud Computing".
+  https://www.us-cert.gov/sites/default/files/publications/CloudComputingHuthCebula.pdf
 
+- [32] Jason A. Donenfeld -- "WireGuard: Next Generation Kernel Network Tunnel".
+  https://www.wireguard.com/papers/wireguard.pdf
 
-- [19] TOR Official Project web site - “Who Uses Tor?”.
+- [33] HAProxy -- Official Web Site. https://www.haproxy.org/
 
-[Online] Available: https://www.torproject.org/about/torusers.html.en
-
-- [20] Rob Jansen, Marc Juarez, Rafa Gálvez, Tariq Elahi and Claudia Diaz - "**Inside Job: Applying Traffic Analysis to Measure Tor from Within**".
-
-[Online] Available: https://www.robgjansen.com/publications/insidejob-ndss2018.pdf
-
-
-- [21] TOR project official web site - FAQ: "What are Entry Guards?".
-
-[Online] Available: https://www.torproject.org/docs/faq#EntryGuards
-
-
-- [22] TOR project offical blog - "Improving Tor's anonymity by changing guard parameters".
-
-[Online] Available: https://blog.torproject.org/improving-tors-anonymity-changing-guard-parameters
-
-
-- [23] **Free Haven – Online Anonymity Papers Library**.
-
-[Online] Available: https://www.freehaven.net/anonbib/
-
-
-- [24] TOR project offical blog - "Research problem: better guard rotation parameters"
-[Online] Available: https://blog.torproject.org/research-problem-better-guard-rotation-parameters
-
-
-- [25] Nick Mathewson - "Cryptographic Challenges in and around Tor".
-
-[Online] Available: https://crypto.stanford.edu/RealWorldCrypto/slides/tor.pdf
-
-
-- [26] TOR project official web site – FAQ: “How often does Tor change its paths?”
-
-[Online] Available: https://www.torproject.org/docs/faq#ChangePaths
-
-
-- [27] TOR project official web site – TOR MANUAL
-
-[Online] Available: https://www.torproject.org/docs/tor-manual.html.en
-
-
-- [28] Milad Nasr, Amir Houmansadr and Arya Mazumdar - "**Compressive Traffic Analysis:A New Paradigm for Scalable Traffic Analysis**".
-
-[Online] Available: https://people.cs.umass.edu/~milad/papers/compress_CCS.pdf
-
-
-- [29] ISACA - “Geolocation: Risk, Issues and Strategies”.
-
-[Online] Available: https://www.isaca.org/Groups/Professional-English/wireless/GroupDocuments/Geolocation_WP.pdf
-
-
-- [30] Eugene Gorelik - “Cloud Computing Models”
-
-[Online] Available: https://web.mit.edu/smadnick/www/wp/2013-01.pdf
-
-
-- [31] Alexa Huth and James Cebula - “The Basics of Cloud Computing”
-
-[Online] Available: https://www.us-cert.gov/sites/default/files/publications/CloudComputingHuthCebula.pdf
-
-
-- [32] Jason A. Donenfeld - “WireGuard: Next Generation Kernel Network Tunnel”
-
-[Online] Available: https://www.wireguard.com/papers/wireguard.pdf
-
-
-- [33] HAPROXY – Official Web Site.
-
-[Online] Available: https://www.haproxy.org/
-
-
-- [34] Privoxy – Official Web Site
-
-[Online] Available: http://www.privoxy.org/
-
+- [34] Privoxy -- Official Web Site. http://www.privoxy.org/
 
 - [35] TOR Standalone Linux version Download Page.
+  https://www.torproject.org/download/download-unix.html.en
 
-[Online] Available: https://www.torproject.org/download/download-unix.html.en
+- [36] HAProxy -- Documentation. https://www.haproxy.org/#docs
 
+- [37] Privoxy -- Official User Manual. http://www.privoxy.org/user-manual/index.html
 
-- [36] HAPROXY - Documentation.
+- [38] King, Kevin, "Personal Jurisdiction, Internet Commerce, and Privacy: The Pervasive Legal Consequences of Geolocation Technologies," Albany Law Journal of Science and Technology, January 2011.
 
-[Online] Available: https://www.haproxy.org/#docs
+- [39] Viviane Reding -- "Digital Sovereignty: Europe at a Crossroads".
+  http://institute.eib.org/wp-content/uploads/2016/01/Digital-Sovereignty-Europe-at-a-Crossroads.pdf
 
+- [40] Tim Maurer, Robert Morgus, Isabel Skierka, Mirko Hohmann -- "Technological Sovereignty: Missing the Point?".
+  http://www.digitaldebates.org/fileadmin/media/cyber/Maurer-et-al_2014_Tech-Sovereignty-Europe.pdf
 
-- [37] PRIVOXY - Official User Manual.
+- [41] BSD License Definition. http://www.linfo.org/bsdlicense.html
 
-[Online] Available: http://www.privoxy.org/user-manual/index.html
+- [42] Joel Reardon and Ian Goldberg -- "Improving Tor using a TCP-over-DTLS Tunnel".
+  https://www.usenix.org/legacy/event/sec09/tech/full_papers/reardon.pdf
 
+- [43] TOR Metrics -- Official Web Site.
+  https://metrics.torproject.org/rs.html#search/country:ES%20flag:exit
 
-- [38] King, Kevin, “Personal Jurisdiction, Internet Commerce, and Privacy: The Pervasive Legal Consequences of Geolocation Technologies,” Albany Law Journal of Science and Technology, January 2011
+- [44] Docker -- Official Documentation. https://docs.docker.com/
 
-- [39] Viviane Reding - "Digital Sovereignty: Europe at a Crossroads"
+- [45] Docker -- Official Documentation "Expose (incoming ports)".
+  https://docs.docker.com/engine/reference/run/#expose-incoming-ports
 
-[Online] Available: http://institute.eib.org/wp-content/uploads/2016/01/Digital-Sovereignty-Europe-at-a-Crossroads.pdf
+---
 
+## License
 
-- [40] Tim Maurer, Robert Morgus, Isabel Skierka, Mirko Hohmann - "**Technological Sovereignty: Missing the Point?**"
-
-[Online] Available: http://www.digitaldebates.org/fileadmin/media/cyber/Maurer-et-al_2014_Tech-Sovereignty-Europe.pdf
-
-
-- [41] BSD License Definition
-
-[Online] Available: http://www.linfo.org/bsdlicense.html
-
-
-- [42] Joel Reardon and Ian Goldberg - "Improving Tor using a TCP-over-DTLS Tunnel"
-
-[Online] Available: https://www.usenix.org/legacy/event/sec09/tech/full_papers/reardon.pdf
-
-
-- [43] TOR Metrics – Official WebSite.
-
-[Online] Available: https://metrics.torproject.org/rs.html#search/country:ES%20flag:exit
-
-
-- [44] Docker – Official Documentation
-
-
-[Online] Available: https://docs.docker.com/
-
-
-- [45] Docker – Official Documentation “Expose (incoming ports)”
-
-[Online] Available: https://docs.docker.com/engine/reference/run/#expose-incoming-ports
+BSD License [41]. Do whatever you want with this tool, but take the responsibility.

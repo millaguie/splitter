@@ -1,0 +1,33 @@
+version: "3.8"
+
+services:
+  splitter:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "63536:63536"   # SOCKS
+      - "63537:63537"   # HTTP
+      - "63540:63540"   # Status / healthz
+    environment:
+      - SPLITTER_INSTANCES=2
+      - SPLITTER_COUNTRIES=6
+      - SPLITTER_RELAY_ENFORCE=exit
+      - SPLITTER_LOG=1
+    volumes:
+      # Mount local configs (read-only) so you can iterate on profiles and defaults
+      - ./configs:/splitter/configs:ro
+      # Persistent runtime data
+      - splitter-data:/splitter/data
+      # Optionally mount source for in-container builds / live edits. Commented by default.
+      # - ./:/workspace:rw
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:63540/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  splitter-data:

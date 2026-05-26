@@ -1,0 +1,55 @@
+# SPLITTER HAProxy Configuration
+# Generated automatically - do not edit
+
+global
+    log /dev/log local0
+    log /dev/log local1 notice
+    maxconn 4096
+    daemon
+
+defaults
+    log     global
+    mode    http
+    option  httplog
+    option  dontlognull
+    timeout connect 5s
+    timeout client  {{.ClientTimeout}}s
+    timeout server  {{.ServerTimeout}}s
+    retries {{.Retries}}
+
+listen stats
+    bind {{.StatsListen}}:{{.StatsPort}}
+    mode http
+    stats enable
+    stats uri {{.StatsURI}}
+    stats realm SPLITTER
+    stats auth admin:{{.StatsPassword}}
+    stats admin if TRUE
+
+frontend http_in
+    bind {{.Listen}}:{{.HTTPPort}}
+    mode http
+    default_backend tor_http
+
+frontend socks_in
+    bind {{.Listen}}:{{.SOCKSPort}}
+    mode tcp
+    option tcplog
+    default_backend tor_socks
+
+backend tor_http
+    balance {{.BalanceAlgorithm}}
+    option tcp-check
+    tcp-check connect
+    {{- range .HTTPBackends}}
+    server {{.Name}} {{.Address}}:{{.Port}} check inter {{.CheckInterval}}s fall {{.MaxFail}} rise {{.MinSuccess}}
+    {{- end}}
+
+backend tor_socks
+    mode tcp
+    balance {{.BalanceAlgorithm}}
+    option tcp-check
+    tcp-check connect
+    {{- range .SOCKSBackends}}
+    server {{.Name}} {{.Address}}:{{.Port}} check inter {{.CheckInterval}}s fall {{.MaxFail}} rise {{.MinSuccess}}
+    {{- end}}
